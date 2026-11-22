@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html class="staticrypt-html">
     <head>
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+        <meta http-equiv="Pragma" content="no-cache" />
+        <meta http-equiv="Expires" content="0" />
+
         <meta charset="utf-8" />
         <title>แผนที่ร้านรับส่งพัสดุ</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -817,10 +821,12 @@ exports.init = init;
   return exports;
 })());
             const templateError = "รหัสผ่านไม่ถูกต้อง",
+                templateStale = "ข้อมูลเว็บเป็นเวอร์ชันเก่า กรุณารีเฟรช",
+                templateLoadError = "โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่",
                 templateToggleAltShow = "Show password",
                 templateToggleAltHide = "Hide password",
                 isRememberEnabled = true,
-                staticryptConfig = {"staticryptEncryptedMsgUniqueVariableName":"","isRememberEnabled":true,"rememberDurationInDays":0,"staticryptSaltUniqueVariableName":"1688f911511b05d1752c783f4af001f0"};
+                staticryptConfig = {"staticryptEncryptedMsgUniqueVariableName":"","isRememberEnabled":true,"rememberDurationInDays":0,"staticryptSaltUniqueVariableName":"47f311cc63220002cbde6ca1cb189e5f"};
 
             // you can edit these values to customize some of the behavior of StatiCrypt
             const templateConfig = {
@@ -830,7 +836,8 @@ exports.init = init;
                 clearLocalStorageCallback: null,
             };
 
-            const payloadParts = ["p0.txt", "p1.txt", "p2.txt", "p3.txt", "p4.txt", "p5.txt", "p6.txt", "p7.txt", "p8.txt"];
+            const payloadParts = ["v/62bf3c574073/p0.txt?v=62bf3c574073", "v/62bf3c574073/p1.txt?v=62bf3c574073", "v/62bf3c574073/p2.txt?v=62bf3c574073", "v/62bf3c574073/p3.txt?v=62bf3c574073", "v/62bf3c574073/p4.txt?v=62bf3c574073", "v/62bf3c574073/p5.txt?v=62bf3c574073", "v/62bf3c574073/p6.txt?v=62bf3c574073", "v/62bf3c574073/p7.txt?v=62bf3c574073", "v/62bf3c574073/p8.txt?v=62bf3c574073"];
+            const payloadDigest = "62bf3c5740733115c5d1d85d62620b679fd452746b0501691b68f3b58349a055";
 
             // toggle password visibility
             const toggleIcon = document.querySelector(".staticrypt-toggle-password-visibility");
@@ -855,37 +862,67 @@ exports.init = init;
             });
 
 
+            function hexSha256(str) {
+                return crypto.subtle.digest("SHA-256", new TextEncoder().encode(str)).then(function (buf) {
+                    return Array.from(new Uint8Array(buf)).map(function (b) {
+                        return b.toString(16).padStart(2, "0");
+                    }).join("");
+                });
+            }
+
+            function showPasswordGate() {
+                document.getElementById("staticrypt_loading").classList.add("hidden");
+                document.getElementById("staticrypt_content").classList.remove("hidden");
+                document.getElementById("staticrypt-password").focus();
+                if (isRememberEnabled) {
+                    document.getElementById("staticrypt-remember-label").classList.remove("hidden");
+                }
+            }
+
             (async function () {
-                const parts = await Promise.all(payloadParts.map(function (u) {
-                    return fetch(u).then(function (r) {
-                        if (!r.ok) throw new Error("payload " + u);
-                        return r.text();
+                let payloadError = null;
+                try {
+                    const parts = await Promise.all(payloadParts.map(function (u) {
+                        return fetch(u, { cache: "no-store" }).then(function (r) {
+                            if (!r.ok) throw new Error("stale");
+                            return r.text();
+                        });
+                    }));
+                    const joined = parts.map(function (p) { return p.trim(); }).join("");
+                    const digest = await hexSha256(joined);
+                    if (digest !== payloadDigest) throw new Error("stale");
+                    staticryptConfig.staticryptEncryptedMsgUniqueVariableName = joined;
+                } catch (err) {
+                    payloadError = (err && err.message === "stale") ? "stale" : "load";
+                }
+
+                if (payloadError) {
+                    showPasswordGate();
+                    alert(payloadError === "stale" ? templateStale : templateLoadError);
+                    document.getElementById("staticrypt-form").addEventListener("submit", function (e) {
+                        e.preventDefault();
+                        alert(payloadError === "stale" ? templateStale : templateLoadError);
                     });
-                }));
-                staticryptConfig.staticryptEncryptedMsgUniqueVariableName = parts.map(function (p) {
-                    return p.trim();
-                }).join("");
+                    return;
+                }
+
                 const staticrypt = staticryptInitiator.init(staticryptConfig, templateConfig);
                 const boot = await staticrypt.handleDecryptOnLoad();
                 if (!boot.isSuccessful) {
-                    document.getElementById("staticrypt_loading").classList.add("hidden");
-                    document.getElementById("staticrypt_content").classList.remove("hidden");
-                    document.getElementById("staticrypt-password").focus();
-                    if (isRememberEnabled) {
-                        document.getElementById("staticrypt-remember-label").classList.remove("hidden");
-                    }
+                    showPasswordGate();
                 }
                 document.getElementById("staticrypt-form").addEventListener("submit", async function (e) {
                     e.preventDefault();
-                    const password = document.getElementById("staticrypt-password").value,
-                        isRememberChecked = document.getElementById("staticrypt-remember").checked;
+                    const password = document.getElementById("staticrypt-password").value.trim();
+                    const isRememberChecked = document.getElementById("staticrypt-remember").checked;
                     const result = await staticrypt.handleDecryptionOfPage(password, isRememberChecked);
                     if (!result.isSuccessful) {
                         alert(templateError);
                     }
                 });
             })().catch(function () {
-                alert("โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่");
+                showPasswordGate();
+                alert(templateLoadError);
             });
         </script>
 
